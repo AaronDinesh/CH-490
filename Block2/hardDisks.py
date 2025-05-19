@@ -21,7 +21,7 @@ def checkOverlapWalls(newPosition: np.ndarray, boxSize: float):
     # Define boundary limits return whether x and y are within limits
     # start refactor
     radius = 0.5
-    return np.any(newPosition < -boxSize - radius) or np.any(newPosition > boxSize + radius)
+    return np.any(newPosition < radius) or np.any(newPosition > boxSize - radius)
     # end refactor
 
 
@@ -48,8 +48,7 @@ def checkOverlapParticles(
     # If periodic boundaries are active, wrap into main simulation cell
     if periodicBoundary:
         # start refactor
-        dr = dr - boxSize*int(dr/boxSize)
-        pass
+        dr = dr - np.round(dr / boxSize) * boxSize
         # end refactor
 
     # Compute distances to all particles
@@ -95,12 +94,11 @@ def lowerTriangularDistMatrix(positions: np.ndarray, numberOfParticles: int, box
             # Apply periodic boundary conditions if requested
                 # Shift distances into the minimal image convention range
             if periodicBoundary:
-                dr = dr - boxSize*int(dr/boxSize)
+                dr = dr - np.round(dr / boxSize) * boxSize
 
             # Compute Euclidean distance
             d = np.sqrt(np.sum(dr**2))
             dist[counter] = d
-            pass
             # end refactor
 
             # Move to the next pair for storing in dist array
@@ -126,18 +124,25 @@ def normalizeRdf(
     Returns:
         np.ndarray: The normalized RDF.
     """
+
     # start implementation
-    #unnormalizedRdf = [ unnormalizedRdf[i] * boxSize**2 / ((np.pi * (edges[i + 1] ** 2 - edges[i] ** 2) * numberOfParticles*(numberOfParticles-1) * sampleCounter)) for i in range(unnormalizedRdf.shape[0])]
-
-
+    normalizedRdf = unnormalizedRdf.copy()  # Create a copy to avoid modifying the original
+    
+    # Normalize by the circular shell area and particle density
     for i in range(unnormalizedRdf.shape[0]):
-        unnormalizedRdf[i] /= (np.pi * (edges[i + 1] ** 2 - edges[i] ** 2))
-        unnormalizedRdf[i] /= (numberOfParticles*(numberOfParticles-1))/(boxSize**2)
-        unnormalizedRdf[i] /= sampleCounter
+        # Normalize by the area of the circular shell
+        shell_area = np.pi * (edges[i + 1] ** 2 - edges[i] ** 2)
+        normalizedRdf[i] /= shell_area
+        
+        # Normalize by the ideal gas density (N-1 particles in area boxSize^2)
+        normalizedRdf[i] /= (numberOfParticles * (numberOfParticles-1)) / (boxSize**2)
+        
+        # Normalize by the number of samples
+        normalizedRdf[i] /= sampleCounter
 
 
     # end implementation
-    return unnormalizedRdf
+    return normalizedRdf
 
 
 @numba.njit
@@ -238,7 +243,12 @@ def dynamicHardDisks(
     acceptanceRatio = numberOfAcceptedMoves / numberOfAttemptedMoves
     print("The acceptance fraction:", acceptanceRatio)
 
-    return acceptanceRatio, samplePositions % boxSize, [(edges[1:] + edges[:-1]) / 2, normalizedRdf], moveAccepted
+    if periodicBoundary:
+        return acceptanceRatio, samplePositions % boxSize, [(edges[1:] + edges[:-1]) / 2, normalizedRdf], moveAccepted
+    else:
+        return acceptanceRatio, samplePositions, [(edges[1:] + edges[:-1]) / 2, normalizedRdf], moveAccepted
+
+    #return acceptanceRatio, samplePositions % boxSize, [(edges[1:] + edges[:-1]) / 2, normalizedRdf], moveAccepted
 
 
 @numba.njit
